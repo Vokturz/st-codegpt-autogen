@@ -70,10 +70,12 @@ def create_autogen_agent_from_codegpt(agent, codegpt_api_key,
     config_dict = get_default_config_dict(codegpt_api_key)
     config_list = [ {**config_dict, "model": agent["id"]}]
     llm_config = get_default_llm_config_dict(config_list)
+    agent_prompt = agent["prompt"]
+    agent_prompt += ". " if (agent_prompt and agent_prompt[-1] != ".") else ""
     autogen_agent = AssistantAgent(
         name=agent["name"],
         llm_config=llm_config,
-        system_message=system_message
+        system_message= agent_prompt + system_message
     )
     return autogen_agent
 
@@ -84,9 +86,9 @@ def chat(autogen_agents, user_task, max_round=12, clear_cache=True):
     for agent in autogen_agents:
         agent.reset()
 
-    global_message={"role": "system",
-                    "content": "Everyone cooperate and help to solve the following task: " + user_task}
-    groupchat = autogen.GroupChat(agents=autogen_agents, messages=[global_message], max_round=max_round)
+    message={"role": "system",
+             "content": "RETURN THE ROLE ONLY."}
+    groupchat = autogen.GroupChat(agents=autogen_agents, messages=[message], max_round=max_round)
 
     manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
 
@@ -122,6 +124,7 @@ with st.sidebar.form("my_form"):
 
     task = st.text_area("Question or Task to solve", placeholder="Explain me the meaining of life")
     max_round = st.number_input("Max interaction rounds", value=8, min_value=3, max_value=15)
+    include_planner = st.checkbox("Include Planner", value=False, help="A planner will suggest how to solve the task.")
     submitted = st.form_submit_button("Start interaction")
     #use_planner = st.checkbox("Use a Planner agent", value=True)
 
@@ -155,28 +158,34 @@ if submitted:
         llm_config=llm_config,
         system_message=f"Guide the conversation one step a time, telling to JUST ONE agent ({', '.join(agents_to_use)}) a question who has to ask."
         " These are the agent instructions:\n" + agents_prompts +
-        f"\n Example: {agents_to_use[0]}, can you explain me something?"
+        f"\n Example: {agents_to_use[0]} should explain the meaning of ..."
+        f"\n Example: What is ...? {agents_to_use[-1]}"
                 )
     
     # Checker agent
     checker = autogen.AssistantAgent(
-    name="Checker",
-    system_message="Verify if the task is finished. If it is, gather the relevant information from the conversation, then"
-    " reply with that information followed by `TERMINATE`. If it is not, ask to the Guider to continue the conversation.",
-    is_termination_msg=is_termination_msg,
-    llm_config=llm_config
+        name="Checker",
+        system_message="Verify if the task is finished. If it is, gather the relevant information from the conversation, then"
+        " reply with that information followed by `TERMINATE`. If it is not, ask to the Guider to continue the conversation.",
+        is_termination_msg=is_termination_msg,
+        llm_config=llm_config
     )
 
     # User Proxy
     user = autogen.UserProxyAgent(
-    name="Human",
-    is_termination_msg=is_termination_msg,
-    human_input_mode="NEVER", # if ALWAYS it will ask for a input
-    system_message="A human who ask questions or give tasks. It interact with the Guider first.",
-    code_execution_config=False,
+        name="Human",
+        is_termination_msg=is_termination_msg,
+        human_input_mode="NEVER", # if ALWAYS it will ask for a input
+        system_message="A human who ask questions or give tasks. It interact with the Guider first.",
+        code_execution_config=False,
     )
 
-    list_of_autogen_agents = [user, planner, guider, checker]
+    list_of_autogen_agents = [user,
+                              guider,
+                              checker]
+    
+    if include_planner:
+        list_of_autogen_agents.append(planner)
 
     # Add CodeGPT agents
     for agent_name in agents_to_use:
