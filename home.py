@@ -4,16 +4,48 @@ import copy
 import os
 import autogen
 from autogen import AssistantAgent
+import hmac
+
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if hmac.compare_digest(st.session_state["password"], st.secrets["password"]):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Don't store the password.
+        else:
+            st.session_state["password_correct"] = False
+
+    # Return True if the passward is validated.
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Show input for password.
+    st.text_input(
+        "Password", type="password", on_change=password_entered, key="password"
+    )
+    if "password_correct" in st.session_state:
+        st.error("😕 Password incorrect")
+    return False
+
+
 
 
 title = "AutoGen with CodeGPT Agents"
 st.set_page_config(page_title=title, layout="wide")
 st.title(title)
+st.sidebar.header(title)
+if not check_password():
+    st.stop()  # Do not continue if check_password is not True.
+
+
 st.write("""**NOTE:**
 - *You will require a simple **agent without** docs or prompt*
 - *It assumes that the **name** of each CodeGPT agent describes what it does*
 - *It assumes that the **prompt** of each CodeGPT agent describes the knowledge contrains*""")
-st.sidebar.header(title)
+
 
 # Margen a la izquierda
 padding_left = 10
@@ -99,6 +131,9 @@ CODEGPT_API_KEY = st.sidebar.text_input("CodeGPT API Key", type="password")
 if not CODEGPT_API_KEY:
     st.sidebar.warning("Please enter your CodeGPT API key.", icon="⚠️")
     st.stop()
+
+
+
 
 authorization_header = {"Authorization": f"Bearer {CODEGPT_API_KEY}"}
 response = requests.get("https://api.codegpt.co/v1/agent", headers=authorization_header)
